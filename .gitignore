@@ -1,0 +1,13 @@
+# Raw and processed datasets should stay local.
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Python cache and local analysis artifacts.
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Generated figures/reports can be added selectively.
+*.log

@@ -248,3 +248,80 @@ Hausdorff 距离越小，表示两条旋律线在几何形态上越相似。
 ## 11. 预期结论
 
 本研究预期能够证明：Hausdorff 距离可以在一定程度上反映旋律线的几何相似性，并对部分曲风的区分提供参考。但是，曲风由旋律、节奏、和声、配器和音色等多种因素共同决定，因此仅依赖三维旋律线的 Hausdorff 距离存在一定局限。更稳健的方案是将该距离与节奏特征、和声特征、DTW 距离或机器学习分类模型结合使用。
+
+## 12. 当前实验进展
+
+当前仓库已经完成 Bodhidharma MIDI Dataset 的初步处理与 Hausdorff 距离实验。
+
+已完成内容：
+
+1. 检查 Bodhidharma 数据集完整性。
+2. 生成数据集元数据和曲风类别统计。
+3. 从每个曲风中抽取 10 首，构造 90 首歌曲的平衡实验子集。
+4. 从 MIDI 文件中提取音符事件。
+5. 构造三维旋律点：`(time_norm, pitch_norm, velocity_norm)`。
+6. 对每首歌的旋律点进行等间隔采样，每首最多 300 点。
+7. 计算 90 首歌曲两两之间的 Hausdorff 距离矩阵。
+8. 生成距离热力图、同/异曲风箱线图和层次聚类图。
+9. 使用 1-NN 最近邻方法测试 Hausdorff 距离的曲风区分能力。
+10. 生成三维旋律线可视化，将连续音符点连接为三维空间曲线。
+
+核心结果：
+
+| 指标 | 结果 |
+|---|---:|
+| 实验歌曲数 | 90 |
+| 曲风类别数 | 9 |
+| 两两距离数 | 4,005 |
+| 同曲风平均 Hausdorff 距离 | 0.4639 |
+| 异曲风平均 Hausdorff 距离 | 0.4957 |
+| 1-NN 曲风分类准确率 | 24.44% |
+
+详细实验摘要见：
+
+```text
+docs/hausdorff_experiment_summary.md
+```
+
+一键运行全流程：
+
+```bash
+python run_pipeline.py
+```
+
+如果已经生成过结果，只想检查流程是否完整，可以跳过已有输出：
+
+```bash
+python run_pipeline.py --skip-existing
+```
+
+只运行某几个步骤：
+
+```bash
+python run_pipeline.py --steps prepare,extract,resample
+python run_pipeline.py --steps hausdorff,visualize
+```
+
+查看所有可用步骤：
+
+```bash
+python run_pipeline.py --list-steps
+```
+
+单步调试命令：
+
+```bash
+python src/prepare_dataset.py
+python src/extract_melody_points.py
+python src/resample_melody_points.py
+python src/hausdorff_experiment.py
+python src/visualize_melody_curves.py
+```
+
+三维旋律线可视化输出：
+
+```text
+figures/melody_curve_3d_single_neon.png
+figures/melody_curve_3d_genre_comparison.png
+figures/interactive/melody_curves_3d_interactive.html
+```
