@@ -10,7 +10,8 @@ DATASET_ROOT = PROJECT_ROOT / "data" / "raw" / "bodhidharma" / "bodhidharma"
 OUTPUT_DIR = PROJECT_ROOT / "data" / "processed"
 METADATA_CSV = OUTPUT_DIR / "bodhidharma_metadata.csv"
 SUMMARY_CSV = OUTPUT_DIR / "bodhidharma_label_summary.csv"
-SUBSET_CSV = OUTPUT_DIR / "bodhidharma_balanced_subset_10.csv"
+DEFAULT_SAMPLES_PER_GENRE = 25
+SUBSET_CSV = OUTPUT_DIR / f"bodhidharma_balanced_subset_{DEFAULT_SAMPLES_PER_GENRE}.csv"
 
 
 def read_midi_header(path: Path) -> dict[str, int | str]:
@@ -107,7 +108,7 @@ def build_summary(rows: list[dict[str, str | int]]) -> list[dict[str, str | int]
 
 
 def build_balanced_subset(
-    rows: list[dict[str, str | int]], samples_per_genre: int = 10
+    rows: list[dict[str, str | int]], samples_per_genre: int = DEFAULT_SAMPLES_PER_GENRE
 ) -> list[dict[str, str | int]]:
     subset: list[dict[str, str | int]] = []
     by_genre: dict[str, list[dict[str, str | int]]] = {}
@@ -143,7 +144,7 @@ def main() -> None:
         ["genre", "file_count", "valid_midi_count", "total_size_bytes"],
     )
 
-    subset = build_balanced_subset(metadata, samples_per_genre=10)
+    subset = build_balanced_subset(metadata, samples_per_genre=DEFAULT_SAMPLES_PER_GENRE)
     write_csv(SUBSET_CSV, subset, fieldnames)
 
     print(f"metadata: {METADATA_CSV}")

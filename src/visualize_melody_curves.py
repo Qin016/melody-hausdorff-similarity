@@ -11,7 +11,9 @@ from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-POINTS_CSV = PROJECT_ROOT / "data" / "processed" / "bodhidharma_melody_points_sampled_300.csv"
+SUBSET_SIZE = 25
+MAX_POINTS_PER_SONG = 300
+POINTS_CSV = PROJECT_ROOT / "data" / "processed" / f"bodhidharma_subset_{SUBSET_SIZE}_melody_points_sampled_{MAX_POINTS_PER_SONG}.csv"
 FIGURES_DIR = PROJECT_ROOT / "figures"
 HTML_DIR = FIGURES_DIR / "interactive"
 

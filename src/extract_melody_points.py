@@ -8,9 +8,10 @@ from typing import BinaryIO
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SUBSET_CSV = PROJECT_ROOT / "data" / "processed" / "bodhidharma_balanced_subset_10.csv"
-NOTES_CSV = PROJECT_ROOT / "data" / "processed" / "bodhidharma_subset_notes.csv"
-POINTS_CSV = PROJECT_ROOT / "data" / "processed" / "bodhidharma_subset_melody_points.csv"
+SUBSET_SIZE = 25
+SUBSET_CSV = PROJECT_ROOT / "data" / "processed" / f"bodhidharma_balanced_subset_{SUBSET_SIZE}.csv"
+NOTES_CSV = PROJECT_ROOT / "data" / "processed" / f"bodhidharma_subset_{SUBSET_SIZE}_notes.csv"
+POINTS_CSV = PROJECT_ROOT / "data" / "processed" / f"bodhidharma_subset_{SUBSET_SIZE}_melody_points.csv"
 
 
 def read_varlen(data: bytes, offset: int) -> tuple[int, int]:

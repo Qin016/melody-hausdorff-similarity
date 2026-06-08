@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>三维旋律线几何相似性实验平台</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark"></span>
+        <div>
+          <h1>Melody Geometry Lab</h1>
+          <p>Hausdorff 旋律曲线分析</p>
+        </div>
+      </div>
+      <nav>
+        <a href="#overview">概览</a>
+        <a href="#curves">三维曲线</a>
+        <a href="#search">相似检索</a>
+        <a href="#map">音乐地图</a>
+        <a href="#generate">旋律生成</a>
+      </nav>
+      <div class="status" id="apiStatus">API 未连接</div>
+    </aside>
+
+    <main>
+      <section class="topbar">
+        <div>
+          <h2>音乐旋律线的几何相似性</h2>
+          <p>前端展示与后端实验 API 分离，基于 225 首 MIDI 的三维旋律曲线。</p>
+        </div>
+        <button id="refreshBtn">刷新数据</button>
+      </section>
+
+      <section id="overview" class="panel">
+        <div class="panel-head">
+          <h3>实验概览</h3>
+          <span>Bodhidharma MIDI Dataset</span>
+        </div>
+        <div class="metric-grid" id="metrics"></div>
+        <div class="split">
+          <div>
+            <h4>曲风样本分布</h4>
+            <div id="genreBars" class="bars"></div>
+          </div>
+          <div>
+            <h4>Hausdorff 实验结果</h4>
+            <div class="image-grid compact">
+              <img id="heatmapImg" alt="Hausdorff 距离热力图" />
+              <img id="boxplotImg" alt="同曲风与异曲风距离箱线图" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="curves" class="panel">
+        <div class="panel-head">
+          <h3>三维旋律线</h3>
+          <span>time × pitch × velocity</span>
+        </div>
+        <div class="image-grid">
+          <img id="singleCurveImg" alt="单曲三维旋律线" />
+          <img id="genreCurveImg" alt="多曲风三维旋律线对比" />
+        </div>
+        <iframe id="curveFrame" title="可交互三维旋律线"></iframe>
+      </section>
+
+      <section id="search" class="panel">
+        <div class="panel-head">
+          <h3>新曲目相似度识别</h3>
+          <span>以曲搜曲 Top-K</span>
+        </div>
+        <div class="control-row">
+          <label>
+            查询曲目
+            <select id="songSelect"></select>
+          </label>
+          <label>
+            Top-K
+            <input id="topKInput" type="number" min="1" max="20" value="8" />
+          </label>
+          <button id="searchBtn">开始检索</button>
+        </div>
+        <div class="split">
+          <div>
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>曲风</th>
+                  <th>曲名</th>
+                  <th>距离</th>
+                </tr>
+              </thead>
+              <tbody id="searchRows"></tbody>
+            </table>
+          </div>
+          <img id="searchImg" alt="相似曲线 3D 对比图" />
+        </div>
+      </section>
+
+      <section id="map" class="panel">
+        <div class="panel-head">
+          <h3>二维音乐地图</h3>
+          <span>MDS from Hausdorff distance</span>
+        </div>
+        <div class="map-wrap">
+          <canvas id="mapCanvas" width="1100" height="640"></canvas>
+          <div id="mapTooltip" class="tooltip"></div>
+        </div>
+        <a id="mapHtmlLink" class="link-button" target="_blank" rel="noreferrer">打开交互地图 HTML</a>
+      </section>
+
+      <section id="generate" class="panel">
+        <div class="panel-head">
+          <h3>三维曲线插值生成</h3>
+          <span>生成新 MIDI 旋律</span>
+        </div>
+        <div class="control-row">
+          <label>
+            插值系数 alpha
+            <input id="alphaInput" type="range" min="0" max="1" value="0.5" step="0.05" />
+          </label>
+          <output id="alphaValue">0.50</output>
+          <label>
+            音符数
+            <input id="noteCountInput" type="number" min="60" max="300" value="180" />
+          </label>
+          <button id="generateBtn">生成旋律</button>
+        </div>
+        <div class="split">
+          <img id="generateImg" alt="插值生成三维曲线" />
+          <div class="download-box">
+            <h4>生成结果</h4>
+            <p>生成的 MIDI 可下载到本地播放，三维点序列可用于继续分析。</p>
+            <a id="midiLink" class="link-button" target="_blank" rel="noreferrer">下载生成 MIDI</a>
+            <a id="pointsLink" class="link-button muted" target="_blank" rel="noreferrer">查看生成点 CSV</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

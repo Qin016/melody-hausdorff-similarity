@@ -7,9 +7,11 @@ import pandas as pd
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-POINTS_CSV = PROJECT_ROOT / "data" / "processed" / "bodhidharma_subset_melody_points.csv"
-SAMPLED_CSV = PROJECT_ROOT / "data" / "processed" / "bodhidharma_melody_points_sampled_300.csv"
-SUMMARY_CSV = PROJECT_ROOT / "data" / "processed" / "bodhidharma_curve_summary.csv"
+SUBSET_SIZE = 25
+MAX_POINTS_PER_SONG = 300
+POINTS_CSV = PROJECT_ROOT / "data" / "processed" / f"bodhidharma_subset_{SUBSET_SIZE}_melody_points.csv"
+SAMPLED_CSV = PROJECT_ROOT / "data" / "processed" / f"bodhidharma_subset_{SUBSET_SIZE}_melody_points_sampled_{MAX_POINTS_PER_SONG}.csv"
+SUMMARY_CSV = PROJECT_ROOT / "data" / "processed" / f"bodhidharma_subset_{SUBSET_SIZE}_curve_summary.csv"
 
 
 def evenly_sample(group: pd.DataFrame, max_points: int = 300) -> pd.DataFrame:
@@ -46,7 +48,7 @@ def main() -> None:
 
     sampled_groups = []
     for _, group in points.groupby(keys, sort=False):
-        sampled_groups.append(evenly_sample(group, max_points=300))
+        sampled_groups.append(evenly_sample(group, max_points=MAX_POINTS_PER_SONG))
     sampled = pd.concat(sampled_groups, ignore_index=True)
     sampled.to_csv(SAMPLED_CSV, index=False, encoding="utf-8")
 

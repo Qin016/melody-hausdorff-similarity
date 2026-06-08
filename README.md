@@ -257,7 +257,7 @@ Hausdorff 距离越小，表示两条旋律线在几何形态上越相似。
 
 1. 检查 Bodhidharma 数据集完整性。
 2. 生成数据集元数据和曲风类别统计。
-3. 从每个曲风中抽取 10 首，构造 90 首歌曲的平衡实验子集。
+3. 从每个曲风中抽取 25 首，构造 225 首歌曲的平衡实验子集。
 4. 从 MIDI 文件中提取音符事件。
 5. 构造三维旋律点：`(time_norm, pitch_norm, velocity_norm)`。
 6. 对每首歌的旋律点进行等间隔采样，每首最多 300 点。
@@ -265,17 +265,18 @@ Hausdorff 距离越小，表示两条旋律线在几何形态上越相似。
 8. 生成距离热力图、同/异曲风箱线图和层次聚类图。
 9. 使用 1-NN 最近邻方法测试 Hausdorff 距离的曲风区分能力。
 10. 生成三维旋律线可视化，将连续音符点连接为三维空间曲线。
+11. 扩展新曲目相似度识别、二维音乐地图和三维曲线插值生成任务。
 
 核心结果：
 
 | 指标 | 结果 |
 |---|---:|
-| 实验歌曲数 | 90 |
+| 实验歌曲数 | 225 |
 | 曲风类别数 | 9 |
-| 两两距离数 | 4,005 |
-| 同曲风平均 Hausdorff 距离 | 0.4639 |
-| 异曲风平均 Hausdorff 距离 | 0.4957 |
-| 1-NN 曲风分类准确率 | 24.44% |
+| 两两距离数 | 25,200 |
+| 同曲风平均 Hausdorff 距离 | 0.4708 |
+| 异曲风平均 Hausdorff 距离 | 0.5003 |
+| 1-NN 曲风分类准确率 | 26.67% |
 
 详细实验摘要见：
 
@@ -300,6 +301,7 @@ python run_pipeline.py --skip-existing
 ```bash
 python run_pipeline.py --steps prepare,extract,resample
 python run_pipeline.py --steps hausdorff,visualize
+python run_pipeline.py --steps search,map,generate
 ```
 
 查看所有可用步骤：
@@ -316,6 +318,9 @@ python src/extract_melody_points.py
 python src/resample_melody_points.py
 python src/hausdorff_experiment.py
 python src/visualize_melody_curves.py
+python src/similarity_search.py --song-id 11 --top-k 8
+python src/music_map.py
+python src/melody_interpolation.py --alpha 0.5 --note-count 180
 ```
 
 三维旋律线可视化输出：
@@ -325,3 +330,46 @@ figures/melody_curve_3d_single_neon.png
 figures/melody_curve_3d_genre_comparison.png
 figures/interactive/melody_curves_3d_interactive.html
 ```
+
+扩展任务输出：
+
+```text
+data/processed/similarity_search_results.csv
+figures/similarity_search_top_match_3d.png
+data/processed/music_map_mds.csv
+figures/music_map_mds.png
+figures/interactive/music_map_mds_interactive.html
+data/processed/interpolated_melody_points.csv
+generated/interpolated_melody.mid
+figures/melody_interpolation_3d.png
+```
+
+## 13. 前后端分离展示平台
+
+项目提供一个轻量级 Web UI，用于直接在网页中查看实验结果并触发下游任务。
+
+后端 API：
+
+```bash
+python backend/app.py
+```
+
+前端静态页面：
+
+```bash
+python -m http.server 5173 -d frontend
+```
+
+然后打开：
+
+```text
+http://127.0.0.1:5173
+```
+
+前端功能：
+
+1. 展示数据集规模、曲风分布和 Hausdorff 实验指标。
+2. 查看三维旋律线静态图和可交互 3D HTML。
+3. 选择曲库中的曲目并进行 Top-K 相似曲检索。
+4. 查看基于 Hausdorff 距离矩阵降维得到的二维音乐地图。
+5. 通过曲线插值生成新的 MIDI 旋律并下载。

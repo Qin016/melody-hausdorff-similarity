@@ -9,6 +9,8 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+SUBSET_SIZE = 25
+MAX_POINTS_PER_SONG = 300
 
 
 @dataclass(frozen=True)
@@ -30,17 +32,17 @@ STEPS: tuple[PipelineStep, ...] = (
         outputs=(
             PROJECT_ROOT / "data" / "processed" / "bodhidharma_metadata.csv",
             PROJECT_ROOT / "data" / "processed" / "bodhidharma_label_summary.csv",
-            PROJECT_ROOT / "data" / "processed" / "bodhidharma_balanced_subset_10.csv",
+            PROJECT_ROOT / "data" / "processed" / f"bodhidharma_balanced_subset_{SUBSET_SIZE}.csv",
         ),
-        description="检查原始 MIDI 文件，生成元数据、类别统计和每类 10 首的实验子集。",
+        description=f"检查原始 MIDI 文件，生成元数据、类别统计和每类 {SUBSET_SIZE} 首的实验子集。",
     ),
     PipelineStep(
         name="extract",
         title="MIDI 音符事件与三维旋律点提取",
         script=PROJECT_ROOT / "src" / "extract_melody_points.py",
         outputs=(
-            PROJECT_ROOT / "data" / "processed" / "bodhidharma_subset_notes.csv",
-            PROJECT_ROOT / "data" / "processed" / "bodhidharma_subset_melody_points.csv",
+            PROJECT_ROOT / "data" / "processed" / f"bodhidharma_subset_{SUBSET_SIZE}_notes.csv",
+            PROJECT_ROOT / "data" / "processed" / f"bodhidharma_subset_{SUBSET_SIZE}_melody_points.csv",
         ),
         description="解析 MIDI 事件，提取 time/pitch/velocity，并连接为三维旋律点序列。",
     ),
@@ -49,20 +51,20 @@ STEPS: tuple[PipelineStep, ...] = (
         title="旋律曲线等间隔采样",
         script=PROJECT_ROOT / "src" / "resample_melody_points.py",
         outputs=(
-            PROJECT_ROOT / "data" / "processed" / "bodhidharma_curve_summary.csv",
-            PROJECT_ROOT / "data" / "processed" / "bodhidharma_melody_points_sampled_300.csv",
+            PROJECT_ROOT / "data" / "processed" / f"bodhidharma_subset_{SUBSET_SIZE}_curve_summary.csv",
+            PROJECT_ROOT / "data" / "processed" / f"bodhidharma_subset_{SUBSET_SIZE}_melody_points_sampled_{MAX_POINTS_PER_SONG}.csv",
         ),
-        description="将每首歌的旋律点压缩到最多 300 个点，降低 Hausdorff 距离计算量。",
+        description=f"将每首歌的旋律点压缩到最多 {MAX_POINTS_PER_SONG} 个点，降低 Hausdorff 距离计算量。",
     ),
     PipelineStep(
         name="hausdorff",
         title="Hausdorff 距离矩阵与曲风区分实验",
         script=PROJECT_ROOT / "src" / "hausdorff_experiment.py",
         outputs=(
-            PROJECT_ROOT / "data" / "processed" / "hausdorff_distance_matrix.csv",
-            PROJECT_ROOT / "data" / "processed" / "hausdorff_pairwise_distances.csv",
-            PROJECT_ROOT / "data" / "processed" / "hausdorff_genre_summary.csv",
-            PROJECT_ROOT / "data" / "processed" / "hausdorff_1nn_predictions.csv",
+            PROJECT_ROOT / "data" / "processed" / f"hausdorff_subset_{SUBSET_SIZE}_distance_matrix.csv",
+            PROJECT_ROOT / "data" / "processed" / f"hausdorff_subset_{SUBSET_SIZE}_pairwise_distances.csv",
+            PROJECT_ROOT / "data" / "processed" / f"hausdorff_subset_{SUBSET_SIZE}_genre_summary.csv",
+            PROJECT_ROOT / "data" / "processed" / f"hausdorff_subset_{SUBSET_SIZE}_1nn_predictions.csv",
             PROJECT_ROOT / "figures" / "hausdorff_distance_heatmap.png",
             PROJECT_ROOT / "figures" / "hausdorff_same_vs_diff_boxplot.png",
             PROJECT_ROOT / "figures" / "hausdorff_hierarchical_clustering.png",
@@ -80,6 +82,38 @@ STEPS: tuple[PipelineStep, ...] = (
         ),
         description="生成静态 3D 旋律曲线图和可交互 HTML，展示音符点连接形成的空间曲线。",
     ),
+    PipelineStep(
+        name="search",
+        title="新曲目相似度识别",
+        script=PROJECT_ROOT / "src" / "similarity_search.py",
+        outputs=(
+            PROJECT_ROOT / "data" / "processed" / "similarity_search_results.csv",
+            PROJECT_ROOT / "figures" / "similarity_search_top_match_3d.png",
+        ),
+        description="以 song_id=11 作为示例查询，在曲库中检索 Top-K 几何相似曲目。",
+    ),
+    PipelineStep(
+        name="map",
+        title="二维音乐地图可视化",
+        script=PROJECT_ROOT / "src" / "music_map.py",
+        outputs=(
+            PROJECT_ROOT / "data" / "processed" / "music_map_mds.csv",
+            PROJECT_ROOT / "figures" / "music_map_mds.png",
+            PROJECT_ROOT / "figures" / "interactive" / "music_map_mds_interactive.html",
+        ),
+        description="将 Hausdorff 距离矩阵降维到二维，生成可视化音乐地图。",
+    ),
+    PipelineStep(
+        name="generate",
+        title="三维曲线插值生成新旋律",
+        script=PROJECT_ROOT / "src" / "melody_interpolation.py",
+        outputs=(
+            PROJECT_ROOT / "data" / "processed" / "interpolated_melody_points.csv",
+            PROJECT_ROOT / "generated" / "interpolated_melody.mid",
+            PROJECT_ROOT / "figures" / "melody_interpolation_3d.png",
+        ),
+        description="自动选择相似曲对，通过三维旋律曲线插值生成新的 MIDI 旋律。",
+    ),
 )
 
 
@@ -92,7 +126,7 @@ def parse_args() -> argparse.Namespace:
         default="all",
         help=(
             "选择要运行的步骤，默认 all。"
-            "可选：prepare,extract,resample,hausdorff,visualize，多个步骤用英文逗号分隔。"
+            "可选：prepare,extract,resample,hausdorff,visualize,search,map,generate，多个步骤用英文逗号分隔。"
         ),
     )
     parser.add_argument(
@@ -148,6 +182,8 @@ def run_step(step: PipelineStep, skip_existing: bool) -> None:
 
     start = time.perf_counter()
     command = [sys.executable, str(step.script)]
+    if step.name == "search":
+        command.extend(["--song-id", "11", "--top-k", "8"])
     subprocess.run(command, cwd=PROJECT_ROOT, check=True)
     elapsed = time.perf_counter() - start
 
@@ -189,7 +225,7 @@ def main() -> None:
     print(f"总耗时：{total_elapsed:.1f} 秒")
     print("主要结果位置：")
     print(f"- 实验摘要：{PROJECT_ROOT / 'docs' / 'hausdorff_experiment_summary.md'}")
-    print(f"- 距离矩阵：{PROJECT_ROOT / 'data' / 'processed' / 'hausdorff_distance_matrix.csv'}")
+    print(f"- 距离矩阵：{PROJECT_ROOT / 'data' / 'processed' / f'hausdorff_subset_{SUBSET_SIZE}_distance_matrix.csv'}")
     print(f"- 三维可视化 HTML：{PROJECT_ROOT / 'figures' / 'interactive' / 'melody_curves_3d_interactive.html'}")
 
 
