@@ -93,6 +93,11 @@ button {
   border-color: #23617d;
 }
 
+button.secondary {
+  background: #111827;
+  border-color: var(--line);
+}
+
 button:disabled {
   cursor: wait;
   opacity: 0.62;
@@ -297,6 +302,19 @@ th {
 .download-box .link-button {
   display: inline-block;
   margin: 14px 10px 0 0;
+}
+
+.playback-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.playback-status {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .link-button.muted {

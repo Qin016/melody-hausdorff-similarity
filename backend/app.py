@@ -217,11 +217,43 @@ def generate():
     payload = request.get_json(silent=True) or {}
     alpha = float(payload.get("alpha", 0.5))
     note_count = int(payload.get("note_count", 180))
-    run_script("melody_interpolation.py", "--alpha", str(alpha), "--note-count", str(note_count))
+    min_distance = float(payload.get("min_distance", 0.22))
+    smooth_window = int(payload.get("smooth_window", 9))
+    song_a = payload.get("song_a")
+    song_b = payload.get("song_b")
+    if (song_a is None) != (song_b is None):
+        return jsonify({"error": "song_a and song_b must be provided together"}), 400
+    if song_a is not None and song_b is not None:
+        try:
+            song_a = int(song_a)
+            song_b = int(song_b)
+        except (TypeError, ValueError):
+            return jsonify({"error": "song_a and song_b must be integers"}), 400
+        if song_a == song_b:
+            return jsonify({"error": "song_a and song_b must be different"}), 400
+
+    args = [
+        "--alpha",
+        str(alpha),
+        "--note-count",
+        str(note_count),
+        "--min-distance",
+        str(min_distance),
+        "--smooth-window",
+        str(smooth_window),
+    ]
+    if song_a is not None and song_b is not None:
+        args.extend(["--song-a", str(song_a), "--song-b", str(song_b)])
+
+    run_script("melody_interpolation.py", *args)
     return jsonify(
         {
             "alpha": alpha,
             "note_count": note_count,
+            "min_distance": min_distance,
+            "smooth_window": smooth_window,
+            "song_a": song_a,
+            "song_b": song_b,
             "points_csv": artifact_url(DATA_DIR / "interpolated_melody_points.csv"),
             "midi": artifact_url(GENERATED_DIR / "interpolated_melody.mid"),
             "figure": artifact_url(FIGURES_DIR / "melody_interpolation_3d.png"),

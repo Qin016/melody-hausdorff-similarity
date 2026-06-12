@@ -12,6 +12,14 @@ const genreColors = new Map([
 ]);
 
 const $ = (id) => document.getElementById(id);
+const PLAYBACK_BPM = 140;
+const BEAT_SECONDS = 60 / PLAYBACK_BPM;
+const MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11];
+const CHORD_PATTERN = [0, 5, 3, 4];
+let generatedPointsUrl = null;
+let audioContext = null;
+let activeAudioNodes = [];
+let playbackTimer = null;
 
 function withApi(path) {
   return `${API}${path}`;
@@ -34,6 +42,206 @@ function formatNumber(value, digits = 0) {
     maximumFractionDigits: digits,
     minimumFractionDigits: digits,
   });
+}
+
+function setPlaybackStatus(text) {
+  $("playbackStatus").textContent = text;
+}
+
+function midiToFrequency(note) {
+  return 440 * 2 ** ((note - 69) / 12);
+}
+
+async function ensureAudioContext() {
+  const AudioEngine = window.AudioContext || window.webkitAudioContext;
+  if (!AudioEngine) {
+    throw new Error("Web Audio API is not supported");
+  }
+  audioContext ||= new AudioEngine();
+  if (audioContext.state === "suspended") {
+    await audioContext.resume();
+  }
+  return audioContext;
+}
+
+function parseGeneratedPoints(csvText) {
+  const lines = csvText.trim().split(/\r?\n/);
+  if (lines.length < 2) {
+    return [];
+  }
+
+  const headers = lines[0].split(",");
+  const pitchIndex = headers.indexOf("pitch_norm");
+  const velocityIndex = headers.indexOf("velocity_norm");
+  const midiPitchIndex = headers.indexOf("midi_pitch");
+  const midiVelocityIndex = headers.indexOf("midi_velocity");
+  const startBeatIndex = headers.indexOf("start_beat");
+  const durationBeatIndex = headers.indexOf("duration_beat");
+  const restIndex = headers.indexOf("rest");
+  const phraseIndex = headers.indexOf("phrase_index");
+  if (pitchIndex === -1 || velocityIndex === -1) {
+    throw new Error("generated points CSV is missing pitch_norm or velocity_norm");
+  }
+
+  return lines
+    .slice(1)
+    .map((line) => line.split(","))
+    .filter((cells) => cells.length > Math.max(pitchIndex, velocityIndex))
+    .map((cells, index) => {
+      const pitchNorm = Number(cells[pitchIndex]);
+      const velocityNorm = Number(cells[velocityIndex]);
+      const midi =
+        midiPitchIndex === -1
+          ? Math.min(84, Math.max(48, 55 + pitchNorm * 24))
+          : Number(cells[midiPitchIndex]);
+      const velocity =
+        midiVelocityIndex === -1
+          ? Math.min(120, Math.max(35, Math.round(45 + velocityNorm * 70)))
+          : Number(cells[midiVelocityIndex]);
+      const startBeat = startBeatIndex === -1 ? index * 0.5 : Number(cells[startBeatIndex]);
+      const durationBeat = durationBeatIndex === -1 ? 0.5 : Number(cells[durationBeatIndex]);
+      const rest = restIndex !== -1 && cells[restIndex].toLowerCase() === "true";
+      const phrase = phraseIndex === -1 ? Math.floor(index / 16) + 1 : Number(cells[phraseIndex]);
+      return { midi, velocity, startBeat, durationBeat, rest, phrase };
+    });
+}
+
+function scaleMidi(root, degree, octaveOffset = 0) {
+  return root + octaveOffset * 12 + MAJOR_SCALE[((degree % MAJOR_SCALE.length) + MAJOR_SCALE.length) % MAJOR_SCALE.length];
+}
+
+function createGuitarVoice(context, destination, midi, velocity, start, end, options = {}) {
+  const detune = options.detune || 0;
+  const level = options.level || 0.56;
+  const filterFrequency = options.filterFrequency || 2600;
+  const decay = options.decay || 0.28;
+  const frequency = midiToFrequency(midi);
+  const oscillator = context.createOscillator();
+  const overtone = context.createOscillator();
+  const gain = context.createGain();
+  const overtoneGain = context.createGain();
+  const filter = context.createBiquadFilter();
+
+  oscillator.type = "triangle";
+  overtone.type = "sawtooth";
+  oscillator.frequency.setValueAtTime(frequency, start);
+  overtone.frequency.setValueAtTime(frequency * 2.01, start);
+  oscillator.detune.setValueAtTime(detune, start);
+  overtone.detune.setValueAtTime(detune * 0.6, start);
+
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(filterFrequency, start);
+  filter.frequency.exponentialRampToValueAtTime(Math.max(700, filterFrequency * 0.38), end);
+  filter.Q.setValueAtTime(1.1, start);
+
+  const peak = (velocity / 127) * level;
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(peak, start + 0.012);
+  gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * 0.18), start + decay);
+  gain.gain.exponentialRampToValueAtTime(0.0001, end);
+  overtoneGain.gain.setValueAtTime(peak * 0.16, start);
+  overtoneGain.gain.exponentialRampToValueAtTime(0.0001, start + Math.min(0.18, decay));
+
+  oscillator.connect(gain);
+  overtone.connect(overtoneGain);
+  overtoneGain.connect(gain);
+  gain.connect(filter);
+  filter.connect(destination);
+  oscillator.start(start);
+  overtone.start(start);
+  oscillator.stop(end + 0.05);
+  overtone.stop(end + 0.05);
+  activeAudioNodes.push({ oscillator, gain, filter });
+  activeAudioNodes.push({ oscillator: overtone, gain: overtoneGain, filter });
+}
+
+function stopGeneratedPlayback() {
+  activeAudioNodes.forEach(({ oscillator }) => {
+    try {
+      oscillator.stop();
+    } catch (error) {
+      // Oscillators may already have ended naturally.
+    }
+  });
+  activeAudioNodes = [];
+  if (playbackTimer) {
+    clearTimeout(playbackTimer);
+    playbackTimer = null;
+  }
+  $("playGeneratedBtn").disabled = false;
+  $("stopGeneratedBtn").disabled = true;
+  setPlaybackStatus(generatedPointsUrl ? "可试听生成旋律" : "等待生成结果");
+}
+
+async function loadGeneratedNotes() {
+  if (!generatedPointsUrl) {
+    throw new Error("no generated melody is available");
+  }
+  const response = await fetch(generatedPointsUrl);
+  if (!response.ok) {
+    throw new Error(`generated points failed: ${response.status}`);
+  }
+  return parseGeneratedPoints(await response.text());
+}
+
+async function playGeneratedMelody() {
+  stopGeneratedPlayback();
+  $("playGeneratedBtn").disabled = true;
+  $("stopGeneratedBtn").disabled = false;
+  setPlaybackStatus("加载旋律中...");
+
+  try {
+    const context = await ensureAudioContext();
+    const notes = await loadGeneratedNotes();
+    if (!notes.length) {
+      throw new Error("generated melody is empty");
+    }
+
+    const startAt = context.currentTime + 0.08;
+    const totalBeats = Math.max(...notes.map((note) => note.startBeat + note.durationBeat));
+    const endAt = startAt + totalBeats * BEAT_SECONDS;
+    const master = context.createGain();
+    master.gain.setValueAtTime(0.34, startAt);
+    master.connect(context.destination);
+
+    notes.forEach((note) => {
+      if (note.rest) {
+        return;
+      }
+      const noteStart = startAt + note.startBeat * BEAT_SECONDS;
+      const noteEnd = noteStart + Math.max(0.18, note.durationBeat * BEAT_SECONDS * 1.04);
+      createGuitarVoice(context, master, note.midi, note.velocity, noteStart, noteEnd, {
+        detune: 0,
+        level: 0.64,
+        filterFrequency: 3000,
+        decay: Math.min(0.42, Math.max(0.2, note.durationBeat * BEAT_SECONDS * 0.58)),
+      });
+    });
+
+    const phraseBeats = 4;
+    const chordCount = Math.ceil(totalBeats / phraseBeats);
+    for (let chordIndex = 0; chordIndex < chordCount; chordIndex += 1) {
+      const degree = CHORD_PATTERN[chordIndex % CHORD_PATTERN.length];
+      const chordStart = startAt + chordIndex * phraseBeats * BEAT_SECONDS;
+      const chordEnd = chordStart + phraseBeats * BEAT_SECONDS * 0.94;
+      [degree, degree + 2, degree + 4].forEach((chordDegree) => {
+        createGuitarVoice(context, master, scaleMidi(48, chordDegree), 46, chordStart, chordEnd, {
+          detune: -4 + chordDegree * 1.5,
+          level: 0.2,
+          filterFrequency: 1900,
+          decay: 0.7,
+        });
+      });
+    }
+
+    const duration = totalBeats * BEAT_SECONDS;
+    setPlaybackStatus(`播放中 · ${notes.length} 个音符`);
+    playbackTimer = setTimeout(stopGeneratedPlayback, (duration + 0.4) * 1000);
+  } catch (error) {
+    console.error(error);
+    stopGeneratedPlayback();
+    setPlaybackStatus("播放失败，请先生成旋律");
+  }
 }
 
 function metric(label, value) {
@@ -73,14 +281,32 @@ function renderSummary(data) {
   $("curveFrame").src = withApi(artifacts.interactive_curves);
   $("generateImg").src = withApi(artifacts.interpolation);
   $("midiLink").href = withApi(artifacts.generated_midi);
+  generatedPointsUrl = withApi("/artifacts/data/processed/interpolated_melody_points.csv");
+  $("pointsLink").href = generatedPointsUrl;
+  setPlaybackStatus("可试听生成旋律");
+}
+
+function renderSongOption(song) {
+  return `<option value="${song.song_id}">${song.song_id} · ${song.genre} · ${song.file_name}</option>`;
+}
+
+function setSelectValueIfExists(select, value) {
+  if ([...select.options].some((option) => option.value === value)) {
+    select.value = value;
+  }
 }
 
 async function loadSongs() {
   const songs = await api("/api/songs");
-  $("songSelect").innerHTML = songs
-    .map((song) => `<option value="${song.song_id}">${song.song_id} · ${song.genre} · ${song.file_name}</option>`)
-    .join("");
+  const options = songs.map(renderSongOption).join("");
+  $("songSelect").innerHTML = options;
   $("songSelect").value = "11";
+
+  const autoOption = '<option value="">自动选择相似曲对</option>';
+  $("generateSongA").innerHTML = autoOption + options;
+  $("generateSongB").innerHTML = autoOption + options;
+  setSelectValueIfExists($("generateSongA"), "30");
+  setSelectValueIfExists($("generateSongB"), "69");
 }
 
 async function runSearch() {
@@ -192,14 +418,42 @@ async function generateMelody() {
   try {
     const alpha = Number($("alphaInput").value);
     const noteCount = Number($("noteCountInput").value);
+    const smoothWindow = Number($("smoothInput").value);
+    const minDistance = Number($("distanceInput").value);
+    const songA = $("generateSongA").value;
+    const songB = $("generateSongB").value;
+    if ((songA && !songB) || (!songA && songB)) {
+      setPlaybackStatus("请选择两首歌，或都设为自动选择");
+      return;
+    }
+    if (songA && songA === songB) {
+      setPlaybackStatus("源曲 A 和源曲 B 不能相同");
+      return;
+    }
+
+    const payload = {
+      alpha,
+      note_count: noteCount,
+      smooth_window: smoothWindow,
+      min_distance: minDistance,
+    };
+    if (songA && songB) {
+      payload.song_a = Number(songA);
+      payload.song_b = Number(songB);
+    }
+
     const data = await api("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ alpha, note_count: noteCount }),
+      body: JSON.stringify(payload),
     });
     $("generateImg").src = withApi(`${data.figure}?t=${Date.now()}`);
     $("midiLink").href = withApi(`${data.midi}?t=${Date.now()}`);
-    $("pointsLink").href = withApi(`${data.points_csv}?t=${Date.now()}`);
+    generatedPointsUrl = withApi(`${data.points_csv}?t=${Date.now()}`);
+    $("pointsLink").href = generatedPointsUrl;
+    const hasSelectedPair = data.song_a !== null && data.song_b !== null;
+    const pairText = hasSelectedPair ? `源曲 ${data.song_a} → ${data.song_b}` : "自动曲对";
+    setPlaybackStatus(`${pairText} 已生成，可试听`);
   } finally {
     button.disabled = false;
     button.textContent = "生成旋律";
@@ -224,8 +478,16 @@ async function bootstrap() {
 $("refreshBtn").addEventListener("click", bootstrap);
 $("searchBtn").addEventListener("click", runSearch);
 $("generateBtn").addEventListener("click", generateMelody);
+$("playGeneratedBtn").addEventListener("click", playGeneratedMelody);
+$("stopGeneratedBtn").addEventListener("click", stopGeneratedPlayback);
 $("alphaInput").addEventListener("input", () => {
   $("alphaValue").textContent = Number($("alphaInput").value).toFixed(2);
+});
+$("smoothInput").addEventListener("input", () => {
+  $("smoothValue").textContent = $("smoothInput").value;
+});
+$("distanceInput").addEventListener("input", () => {
+  $("distanceValue").textContent = Number($("distanceInput").value).toFixed(2);
 });
 
 bootstrap();
