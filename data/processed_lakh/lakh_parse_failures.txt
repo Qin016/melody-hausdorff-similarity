@@ -1,0 +1,2 @@
+data/raw/lakh/selected_midi/Folk/TREBJQN128F92EEC28__629e2a758e370322ee48e1d5de1c9975.mid: index out of range
+data/raw/lakh/selected_midi/Rap/TRUAGPE128F429E253__496b1c09a5bbfb7ddec1a865f5c033f5.mid: too few pitched notes
