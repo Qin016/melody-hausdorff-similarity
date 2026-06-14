@@ -373,3 +373,247 @@ http://127.0.0.1:5173
 3. 选择曲库中的曲目并进行 Top-K 相似曲检索。
 4. 查看基于 Hausdorff 距离矩阵降维得到的二维音乐地图。
 5. 通过曲线插值生成新的 MIDI 旋律并下载。
+
+## 14. 实验复现指南
+
+本节汇总当前仓库中各个实验部分的复现命令。建议先在项目根目录安装依赖：
+
+```bash
+pip install -r requirements.txt
+```
+
+如果使用 Windows PowerShell，以下命令均在项目根目录执行。
+
+### 14.1 Bodhidharma 数据集下载
+
+项目默认使用 Bodhidharma MIDI Dataset。原始数据下载并解压到 `data/raw/bodhidharma`：
+
+```powershell
+New-Item -ItemType Directory -Force -Path data\raw | Out-Null
+Invoke-WebRequest -Uri "https://zenodo.org/records/6959362/files/bodhidharma.zip?download=1" -OutFile "data\raw\bodhidharma.zip"
+Expand-Archive -Path "data\raw\bodhidharma.zip" -DestinationPath "data\raw\bodhidharma" -Force
+```
+
+解压后应存在类似路径：
+
+```text
+data/raw/bodhidharma/bodhidharma/Country/*.mid
+data/raw/bodhidharma/bodhidharma/Jazz/*.mid
+...
+```
+
+### 14.2 平衡子集主实验
+
+平衡子集实验每个曲风取 25 首，共 225 首。可以一键运行完整流程：
+
+```bash
+python run_pipeline.py
+```
+
+如果已经生成过中间结果，可以跳过已有输出：
+
+```bash
+python run_pipeline.py --skip-existing
+```
+
+也可以分步运行：
+
+```bash
+python src/prepare_dataset.py
+python src/extract_melody_points.py
+python src/resample_melody_points.py
+python src/hausdorff_experiment.py
+python src/visualize_melody_curves.py
+python src/similarity_search.py --song-id 11 --top-k 8
+python src/music_map.py
+python src/melody_interpolation.py --alpha 0.5 --note-count 180
+```
+
+主要输出：
+
+```text
+data/processed/bodhidharma_balanced_subset_25.csv
+data/processed/bodhidharma_subset_25_melody_points_sampled_300.csv
+data/processed/hausdorff_subset_25_pairwise_distances.csv
+data/processed/hausdorff_subset_25_1nn_predictions.csv
+figures/hausdorff_distance_heatmap.png
+figures/hausdorff_same_vs_diff_boxplot.png
+figures/melody_curve_3d_genre_comparison.png
+```
+
+### 14.3 采样点数消融实验
+
+用于比较每首歌最大采样点数为 `100, 200, 300, 500, 800, 1000` 时，Hausdorff 1-NN 分类效果是否变化：
+
+```bash
+python src/sampling_points_ablation.py
+```
+
+主要输出：
+
+```text
+data/processed/sampling_points_ablation_summary.csv
+data/processed/sampling_points_ablation_predictions.csv
+figures/sampling_points_ablation_accuracy.png
+figures/sampling_points_ablation_distances.png
+```
+
+该实验结论：增加采样点可以略微扩大同/异曲风距离差距，但并没有明显提高 1-NN 分类准确率。
+
+### 14.4 距离方法与机器学习分类器对比
+
+该实验比较 Hausdorff、DTW、Discrete Frechet 的 1-NN 分类效果，并用音乐统计特征训练传统机器学习分类器。
+
+默认使用 80 个旋律采样点运行距离方法：
+
+```bash
+python src/method_comparison_experiment.py
+```
+
+如果只想跑 300 个采样点下的 DTW 和 Frechet：
+
+```bash
+python src/method_comparison_experiment.py --sequence-points 300 --skip-ml --methods "DTW,Discrete Frechet"
+```
+
+合并 300 点距离结果与机器学习结果：
+
+```bash
+python src/merge_300_point_comparison.py
+```
+
+主要输出：
+
+```text
+data/processed/distance_method_comparison_summary.csv
+data/processed/distance_method_comparison_summary_300.csv
+data/processed/ml_song_features.csv
+data/processed/ml_classifier_comparison_summary.csv
+data/processed/method_comparison_summary_300_combined.csv
+figures/method_comparison_accuracy.png
+figures/method_comparison_accuracy_300_combined.png
+```
+
+该实验结论：DTW 通常略优于 Hausdorff，但提升有限；基于音高、节奏、力度、音程、复音等统计特征的机器学习分类器明显更强。
+
+### 14.5 Bodhidharma 全量非平衡实验
+
+该实验不再构建每类 25 首的平衡子集，而是使用 Bodhidharma 全量 946 首 MIDI。由于类别不平衡，结果同时报告 `accuracy` 和 `balanced accuracy`。
+
+```bash
+python src/bodhidharma_full_experiment.py --distance-points 100
+```
+
+主要输出：
+
+```text
+data/processed/bodhidharma_full_enhanced_song_features.csv
+data/processed/bodhidharma_full_melody_points_sampled_300.csv
+data/processed/bodhidharma_full_ml_classifier_summary.csv
+data/processed/bodhidharma_full_distance_method_summary.csv
+figures/bodhidharma_full_ml_accuracy.png
+figures/bodhidharma_full_distance_accuracy.png
+```
+
+当前全量实验中，SVM RBF 的普通准确率约为 71.67%，balanced accuracy 约为 66.31%；距离方法中 DTW 相对最好，但 balanced accuracy 仍明显低于机器学习分类器。
+
+### 14.6 Lakh MIDI + tagtraum 新数据集实验
+
+为了测试更大规模、更多曲风类别的数据集，项目加入了 Lakh MIDI Dataset matched subset 与 tagtraum/MSD 曲风标签。
+
+下载数据：
+
+```powershell
+New-Item -ItemType Directory -Force -Path data\raw\lakh | Out-Null
+Invoke-WebRequest -Uri "http://www.tagtraum.com/genres/msd_tagtraum_cd1.cls.zip" -OutFile "data\raw\lakh\msd_tagtraum_cd1.cls.zip"
+Invoke-WebRequest -Uri "http://www.tagtraum.com/genres/msd_tagtraum_cd2.cls.zip" -OutFile "data\raw\lakh\msd_tagtraum_cd2.cls.zip"
+Invoke-WebRequest -Uri "http://hog.ee.columbia.edu/craffel/lmd/lmd_matched.tar.gz" -OutFile "data\raw\lakh\lmd_matched.tar.gz"
+Expand-Archive -Path data\raw\lakh\msd_tagtraum_cd1.cls.zip -DestinationPath data\raw\lakh -Force
+Expand-Archive -Path data\raw\lakh\msd_tagtraum_cd2.cls.zip -DestinationPath data\raw\lakh -Force
+```
+
+注意：`lmd_matched.tar.gz` 约 1.4GB，下载和扫描需要较长时间。
+
+构建 14 类、每类 70 首的平衡子集：
+
+```bash
+python src/prepare_lakh_dataset.py --per-genre 70 --min-genre-count 70 --seed 42
+```
+
+运行 Lakh 实验：
+
+```bash
+python src/lakh_genre_experiment.py --distance-per-genre 15
+```
+
+主要输出：
+
+```text
+data/processed_lakh/lakh_tagtraum_label_summary.csv
+data/processed_lakh/lakh_tagtraum_balanced_subset.csv
+data/processed_lakh/lakh_enhanced_song_features.csv
+data/processed_lakh/lakh_melody_points_sampled_300.csv
+data/processed_lakh/lakh_ml_classifier_summary.csv
+data/processed_lakh/lakh_distance_method_summary.csv
+figures/lakh/lakh_ml_accuracy.png
+figures/lakh/lakh_distance_accuracy.png
+```
+
+该实验用于验证：当数据规模更大、曲风类别更多且标签更真实复杂时，单一旋律距离方法的区分能力进一步下降，而机器学习特征分类器仍明显优于距离 1-NN。
+
+### 14.7 前后端展示复现
+
+启动后端：
+
+```bash
+python backend/app.py
+```
+
+启动前端：
+
+```bash
+python -m http.server 5173 -d frontend
+```
+
+浏览器打开：
+
+```text
+http://127.0.0.1:5173
+```
+
+页面顶部的 `数据视图` 可以选择：
+
+```text
+平衡子集
+全量数据集
+```
+
+切换后会刷新总览指标、曲风分布、实验结果图、曲目列表和 Top-K 相似曲检索。旋律插值生成目前固定使用平衡子集曲目，因为现有插值脚本依赖平衡子集的曲线和距离文件。
+
+### 14.8 推荐复现实验顺序
+
+如果从零开始，推荐按以下顺序执行：
+
+```text
+1. 下载 Bodhidharma 数据集
+2. python run_pipeline.py
+3. python src/sampling_points_ablation.py
+4. python src/method_comparison_experiment.py
+5. python src/method_comparison_experiment.py --sequence-points 300 --skip-ml --methods "DTW,Discrete Frechet"
+6. python src/merge_300_point_comparison.py
+7. python src/bodhidharma_full_experiment.py --distance-points 100
+8. 可选：下载 Lakh MIDI，并运行 prepare_lakh_dataset.py 与 lakh_genre_experiment.py
+9. 启动 backend/app.py 和 frontend 静态页面查看结果
+```
+### 14.9 快速复现
+若想快速查看前后端,依次运行如下命令，再访问
+```text
+http://127.0.0.1:5173
+```
+即可
+```text
+python run_pipeline.py
+python src/bodhidharma_full_experiment.py --distance-points 100
+python backend/app.py
+python -m http.server 5173 -d frontend
+```

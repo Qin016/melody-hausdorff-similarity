@@ -133,6 +133,14 @@ main {
   margin-bottom: 18px;
 }
 
+.topbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  justify-content: flex-end;
+}
+
 .panel {
   padding: 22px;
   margin-bottom: 18px;

@@ -20,6 +20,7 @@ let generatedPointsUrl = null;
 let audioContext = null;
 let activeAudioNodes = [];
 let playbackTimer = null;
+let currentDataset = "balanced";
 
 function withApi(path) {
   return `${API}${path}`;
@@ -46,6 +47,11 @@ function formatNumber(value, digits = 0) {
 
 function setPlaybackStatus(text) {
   $("playbackStatus").textContent = text;
+}
+
+function withDataset(path, dataset = currentDataset) {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}dataset=${dataset}`;
 }
 
 function midiToFrequency(note) {
@@ -251,12 +257,22 @@ function metric(label, value) {
 function renderSummary(data) {
   const dataset = data.dataset;
   const hausdorff = data.hausdorff;
+  const songLabel = data.view === "full" ? "展示曲目" : "平衡曲目";
+  const accuracyMetrics = [
+    metric("Hausdorff 1-NN", `${formatNumber(hausdorff.one_nn_accuracy * 100, 2)}%`),
+  ];
+  if (hausdorff.balanced_accuracy !== null && hausdorff.balanced_accuracy !== undefined) {
+    accuracyMetrics.push(metric("Hausdorff 平衡准确率", `${formatNumber(hausdorff.balanced_accuracy * 100, 2)}%`));
+  }
+  if (hausdorff.best_ml_balanced_accuracy !== null && hausdorff.best_ml_balanced_accuracy !== undefined) {
+    accuracyMetrics.push(metric(`${hausdorff.best_ml_method} 平衡准确率`, `${formatNumber(hausdorff.best_ml_balanced_accuracy * 100, 2)}%`));
+  }
   $("metrics").innerHTML = [
     metric("MIDI 文件", formatNumber(dataset.midi_files)),
     metric("曲风类别", formatNumber(dataset.genres)),
-    metric("平衡曲目", formatNumber(dataset.balanced_songs)),
+    metric(songLabel, formatNumber(dataset.balanced_songs)),
     metric("采样旋律点", formatNumber(dataset.sampled_points)),
-    metric("1-NN 准确率", `${formatNumber(hausdorff.one_nn_accuracy * 100, 2)}%`),
+    ...accuracyMetrics,
   ].join("");
 
   const maxCount = Math.max(...dataset.label_summary.map((row) => row.file_count));
@@ -274,8 +290,8 @@ function renderSummary(data) {
     .join("");
 
   const artifacts = data.artifacts;
-  $("heatmapImg").src = withApi(artifacts.distance_heatmap);
-  $("boxplotImg").src = withApi(artifacts.same_diff_boxplot);
+  $("heatmapImg").src = withApi(`${artifacts.distance_heatmap}?t=${Date.now()}`);
+  $("boxplotImg").src = withApi(`${artifacts.same_diff_boxplot}?t=${Date.now()}`);
   $("singleCurveImg").src = withApi(artifacts.single_curve);
   $("genreCurveImg").src = withApi(artifacts.genre_curves);
   $("curveFrame").src = withApi(artifacts.interactive_curves);
@@ -297,14 +313,16 @@ function setSelectValueIfExists(select, value) {
 }
 
 async function loadSongs() {
-  const songs = await api("/api/songs");
+  const songs = await api(withDataset("/api/songs"));
   const options = songs.map(renderSongOption).join("");
   $("songSelect").innerHTML = options;
-  $("songSelect").value = "11";
+  setSelectValueIfExists($("songSelect"), "11");
 
+  const generationSongs = await api(withDataset("/api/songs", "balanced"));
+  const generationOptions = generationSongs.map(renderSongOption).join("");
   const autoOption = '<option value="">自动选择相似曲对</option>';
-  $("generateSongA").innerHTML = autoOption + options;
-  $("generateSongB").innerHTML = autoOption + options;
+  $("generateSongA").innerHTML = autoOption + generationOptions;
+  $("generateSongB").innerHTML = autoOption + generationOptions;
   setSelectValueIfExists($("generateSongA"), "30");
   setSelectValueIfExists($("generateSongB"), "69");
 }
@@ -316,7 +334,7 @@ async function runSearch() {
   try {
     const songId = $("songSelect").value;
     const topK = $("topKInput").value;
-    const data = await api(`/api/search?song_id=${songId}&top_k=${topK}`);
+    const data = await api(withDataset(`/api/search?song_id=${songId}&top_k=${topK}`));
     $("searchRows").innerHTML = data.results
       .map(
         (row) => `
@@ -462,8 +480,9 @@ async function generateMelody() {
 
 async function bootstrap() {
   try {
+    currentDataset = $("datasetSelect").value;
     setStatus("API 连接中...");
-    const summary = await api("/api/summary");
+    const summary = await api(withDataset("/api/summary"));
     renderSummary(summary);
     await loadSongs();
     await loadMusicMap();
@@ -476,6 +495,7 @@ async function bootstrap() {
 }
 
 $("refreshBtn").addEventListener("click", bootstrap);
+$("datasetSelect").addEventListener("change", bootstrap);
 $("searchBtn").addEventListener("click", runSearch);
 $("generateBtn").addEventListener("click", generateMelody);
 $("playGeneratedBtn").addEventListener("click", playGeneratedMelody);
@@ -494,7 +514,8 @@ bootstrap();
 
 async function loadExistingSearch() {
   try {
-    const data = await api("/api/search?song_id=11&top_k=8");
+    const songId = $("songSelect").value || "11";
+    const data = await api(withDataset(`/api/search?song_id=${songId}&top_k=8`));
     $("searchRows").innerHTML = data.results
       .map(
         (row) => `

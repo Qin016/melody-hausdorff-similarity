@@ -29,9 +29,18 @@
       <section class="topbar">
         <div>
           <h2>音乐旋律线的几何相似性</h2>
-          <p>前端展示与后端实验 API 分离，基于 225 首 MIDI 的三维旋律曲线。</p>
+          <p>前端展示与后端实验 API 分离，支持平衡子集与全量数据集对比。</p>
         </div>
-        <button id="refreshBtn">刷新数据</button>
+        <div class="topbar-actions">
+          <label>
+            数据视图
+            <select id="datasetSelect">
+              <option value="balanced">平衡子集</option>
+              <option value="full">全量数据集</option>
+            </select>
+          </label>
+          <button id="refreshBtn">刷新数据</button>
+        </div>
       </section>
 
       <section id="overview" class="panel">
@@ -165,6 +174,6 @@
       </section>
     </main>
 
-    <script src="./app.js?v=20260612-selectable-interpolation"></script>
+    <script src="./app.js?v=20260614-dataset-switch"></script>
   </body>
 </html>
